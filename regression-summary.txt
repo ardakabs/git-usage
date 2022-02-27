@@ -17,5 +17,3 @@ Residual standard error: 6.523 on 3 degrees of freedom
 Multiple R-squared:  0.7286,	Adjusted R-squared:  0.6382 
 F-statistic: 8.055 on 1 and 3 DF,  p-value: 0.06574
 
-No documentation for ‘hsink’ in specified packages and libraries:
-you could try ‘??hsink’
