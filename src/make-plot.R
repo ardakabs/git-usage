@@ -1,6 +1,6 @@
 library(ggplot2)
 
-sods_data <- read.csv("data/stackoverflow-git-data.csv")
+sods_data <- read.csv("stackoverflow-git-data.csv")
 
 g <- ggplot(
   data = sods_data,
@@ -17,12 +17,12 @@ g <- ggplot(
     title = "Git usage has increased",
     subtitle = "Data from Stackoverflow Developer Survey")
 
-ggsave(filename = "out/git-usage.png",
+ggsave(filename = "git-usage.png",
        plot = g,
        height = 7.4,
        width = 10.5,
        units = "cm")
 
-sink(file = "out/regression-summary.txt")
+sink(file = "regression-summary.txt")
 summary(lm(percentage ~ year, data = sods_data))
 sink()
