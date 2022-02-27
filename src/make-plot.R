@@ -8,7 +8,7 @@ g <- ggplot(
   data = sods_data,
   mapping = aes(x = year, y = percentage)) +
   geom_point() +
-  geom_smooth(method = "lm", colour = "darkgrey") +
+  geom_smooth(method = "lm", colour = "darkgrey", se = FALSE) +
   geom_text(
     aes(x = 2020, y = 82.8, label = "only GitHub"),
     size = 3,
