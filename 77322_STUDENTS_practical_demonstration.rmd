@@ -1,0 +1,307 @@
+---
+title: |
+  | Computing Skills (3rd year)
+  | Random forest machine learning in R
+  | Exercises for practical demonstration
+author: "by José Lourenço, Francesco Pinotti, Sumali Bajaj"
+date: "11th November 2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+Remember you need these R-packages.
+
+```{r echo=TRUE, include=TRUE}
+
+library(tidyverse)
+library(cowplot)
+library(randomForest)
+library(pROC)
+
+```
+
+The package __reprtree__ can be installed with the following instructions.
+
+```{r echo=TRUE, include=TRUE, eval=FALSE}
+
+# install.packages("devtools")
+# devtools::install_github('araastat/reprtree')
+
+```
+
+## The dataset
+
+In this demonstration we will use a dataset which includes 4 variables:
+
+* __nativeSpeaker__: whether an individual is a native speaker
+* __age__: age of the individual
+* __testA__: score on test A
+* __testB__: score on test B
+
+```{r echo=TRUE, include=TRUE}
+
+load("77322_nativespeaker_data.Rdata") ##nativespeaker_data
+head(nativespeaker_data)
+
+```
+
+## General objectives
+
+We are interested in investigating if we can predict if an individual is a native speaker given the variables available. For this, we will:
+
+* explore which random forest parameters should be used
+* explore the importance of each variable
+* explore the accuracy of the random forest
+* try to predict if a new set of individuals are native speakers
+
+## Running a random forest
+
+We start by blindly running a random forest.
+
+```{r echo=TRUE, include=TRUE}
+
+##make sure that the variable we are predicting is a factor
+##which tells the software we are doing a classification exercise
+nativespeaker_data$nativeSpeaker<- factor(nativespeaker_data$nativeSpeaker)
+
+rf <- randomForest(nativeSpeaker ~ ., data = nativespeaker_data)
+rf
+
+```
+
+From printing the rf object (the solution), we can extract some immediate important information:
+
+* the number of trees in the random forest is 500 (which is the default, since we didn't ask for a specific number)
+* the number of variables per split (tree node) is 1 (which is the default, since we didn't ask for a specific number; in fact the default is floor(sqrt(N)) with N the number of available variables)
+* out of the bag (OOB) error rate is presented (varies by run, more on this below)
+* the confusion matrix suggests low class errors (for both __nativeSpeaker__ "yes" and "no")
+
+## Randomness
+
+If you run this code more than once, you will notice that results may change slightly. This is because the algorithm is stochastic, coming from the bootstrapping of the data and variables to build the trees in the forest. You should not worry too much about this variability, unless of course everytime you run the random forest the results are completely different. If this happens, it is either a sign that there is something off with the data, or that the default random forest parameters may not be the best.
+
+## Exploring the two random forest parameters
+
+For this session, we will consider only two parameters for the random forest:
+
+* __mtry__: the number of variables to use per split (tree node)
+* __ntree__: the number of trees for the forest
+
+By running the random forest over values of these parameters, we can get a sense if the default parameters aren't ideal for our dataset. 
+
+A typical and simple way to do this is to set the number of trees to a high number N, and check how the error rate varies as the random forest considers more and more trees up to the total N. After checking the error over the number of trees and selecting an appropriate tree number, one can try several mtry numbers and check its effect on the error rate.
+
+```{r echo=TRUE, include=TRUE}
+
+##force a large number of trees
+rf <- randomForest(nativeSpeaker ~ ., data = nativespeaker_data, ntree=1000)
+
+##this is how the OOB error rates are extracted from the solution within "rf"
+head(rf$err.rate)
+
+```
+
+The output __rf$err.rate__ provides an estimate of the error for the entire dataset (OOB, column 1), and the two available values of the variable being predicted, in this case __no__ (column 2) and __yes__ (column 3). The rows in this data.frame show how the errors change as the number of trees considered increases, from 1 (row 1) to ntree (last row). We can plot the OOB:
+
+```{r echo=TRUE, include=TRUE}
+
+plot(rf$err.rate[,1], t='l')
+
+```
+
+As expected, the error is large for a single tree and decreases fast when considering more trees. Typically, the error is noisy but it plateaus around a particular value once the number of trees is large. In this case, we can see that the default of ntree=500 is already in the plateau of the error and we can conclude that 500 trees should be OK to run the random forest on this dataset __when using mtry as default__.
+
+We can then check the effect of mtry.
+
+```{r echo=TRUE, include=TRUE}
+
+mtry_values<- c(1,2,3) ##there are only 3 variables
+ntree<- 1000 ##set to large
+OOB_results<- c()
+for(mt in mtry_values){
+  rf <- randomForest(nativeSpeaker ~ ., data = nativespeaker_data, ntree=ntree, mtry=mt)
+  ##OOB only
+  newOOB<- rf$err.rate[,1] 
+  ##save each OOB solution by row on a data.frame
+  OOB_results<- rbind(OOB_results,newOOB)
+}
+
+plot(OOB_results[1,], t='l', col=1, ylim=c(0,0.1))
+for(mt in 2:length(mtry_values)){
+  lines(OOB_results[mt,], col=mt)
+}
+legend("topright",legend=mtry_values,col =1:length(mtry_values) ,lty=1)
+
+```
+
+The OOB error is again noisy and it will vary between runs. However, its variation is small. The effect of mtree is visible, again suggesting that 500 is enough to reach a plateau independently of mtry. mtry itself also has little impact on the error. As such, for this dataset, we can conclude that the default parameters are OK to be used.  
+
+## Trees
+
+We can extract trees from the forest. However, we must accept that the power of the forest superseeds that of any tree, and also that depending on the complexity of the dataset, trees may be difficult to interpret. Note also that everytime you run the random forest, tree number 20 (selected in "k=20") changes.
+
+```{r echo=TRUE, include=TRUE, fig.width=10, fig.height=4}
+  
+##rerun because 'rf' was used in the code above
+rf <- randomForest(nativeSpeaker ~ ., data = nativespeaker_data)
+##k is the tree we select from the forest
+# reprtree:::plot.getTree(rf, k=20)
+
+```
+
+## Variable (feature) importance
+
+The random forest will quantify how important each variable (also commonly termed __feature_"__) was for the prediction. We can extract and plot this information from the forest.
+
+```{r echo=TRUE, include=TRUE, fig.width=10, fig.height=4}
+  
+imp<- importance(rf) ##extracts a matrix with the importance information
+print(imp)
+
+varImpPlot(rf) ##plots the importance information
+
+```
+
+The most important variable is the score of test B followed by the score of test A, and finally the age of the individual.
+
+## Thinking about the available variables
+
+Datasets can include any number of variables. Depending on the question at hand, some variables may not make much sense to be included. However, if served as input into random forests, some importance may be given to them, confounding our findings.
+
+For example, imagine that you have a dataset which includes the physical properties of N dogs. Your main question is __(i)__ "what physical properties help predict a dog's breed". In this dataset, a dog owner's name is also included for each dog. Should this variable be included in the random forest? How would the name of the owner help answer __(i)__? What if for some odd reason a lot of owners called Sam have lakeland terriers, and the variable can thus indirectly explain physical properties? The random forest would give some importance to this coincidence, but it would not be informative in answering __(i)__. The variable of the owner's name should be removed before running the random forest.
+
+## may be a coincidence that owner's name is correlated with dog's breed (ie. may inform trees), but it should be excluded as it does not actually inform US on dog's properties
+
+Looking at our native speaker dataset - should __age__ be included in the random forest? Under what conditions can we imagine that the age of an individual dictates if someone is a native speaker? It depends on how the question is set! For example, if the question is "which test predicts a native speaker" then age should not be included.
+
+## A few quantifications of predictive power
+
+In many occasions we would want to be able to summarize how well a random forest works in light of the data presented to it. In the sections above we looked at the OOB error, but there are 3 other commonly used measures - overall __accuracy__, __sensitity__ (true positive rate) and __specificity__ (true negative rate).
+
+We start by rerunning the random forest, showing also how we could remove __age__ if indeed it wasn't compatible with our main question.
+
+
+```{r echo=TRUE, include=TRUE}
+
+data_noage<- nativespeaker_data %>% select(nativeSpeaker, testA, testB)
+
+rf <- randomForest(nativeSpeaker ~ ., data = data_noage)
+rf
+
+```
+
+Note that the OOB error may go up, because we are using one less variable, which was helping predict __nativeSpeaker__ a bit. That can sometimes be a price to pay, if indeed we think that __age__ does not make sense to be kept when answering our question.
+
+We use the confusion matrix to calculate the measures of predictive power.
+
+```{r echo=TRUE, include=TRUE}
+
+#extract confusion matrix
+m<- rf$confusion
+#remove the last column which is the error.class
+m<- m[,-ncol(m)]
+m
+
+```
+
+The matrix should be read as:
+
+* rows are the __original__ values of __nativeSpeaker__
+* columns are the random forest __predicted__ values of __nativeSpeaker__
+
+So, looking at cell [1,1]: means that for original __no__, 93 where predicted as __no__ and 7 as __yes. The diagonal of the matrix is thus the number of data entries correctly predicted (the numbers we include in this sentence may change, depending on your run of the random forest!).
+
+The overall __accuracy__ (ACC, as introduced in the lecture slides) is the number of correctly predicted entires divided by the sum of all entries.
+
+```{r echo=TRUE, include=TRUE}
+
+##calc accuracy (prop correctly classified)
+ACC<- (m[1,1] + m[2,2])/sum(m)
+ACC
+```
+
+The __true positive rate__ (TPR, as introduced in the lecture slides) is the number of correctly predicted entires for __yes__ divided by the sum of all entries that are actually __yes__.
+
+```{r echo=TRUE, include=TRUE}
+##calc sensitity (True Positive Rate)
+TPR<- (m[2,2])/sum(m[2,])
+TPR
+```
+
+The __true negative rate__ (TNR, as introduced in the lecture slides) is the number of correctly predicted entires for __no__ divided by the sum of all entries that are actually __no__.
+
+```{r echo=TRUE, include=TRUE}
+
+##calc specificity (True Negative Rate)
+TNR<- (m[1,1])/sum(m[1,])
+TNR
+```
+
+__Note a very important thing__: the definition of TPR and TNR depends on our interpretation of the data. In the code above, the TPR is calculated as (m[2,2])/sum(m[2,]) because for us a __"positive case"__ is equivalent to __nativeSpeaker=yes__ (and vice-versa for __"negative case"__ and __nativeSpeaker=no__).
+
+Imagine a cenario in which the variable of interest is instead X="A" or X="B". Which one is the positive and which one is the negative? A decision has to be made to whether __A__ or __B__ represent a __"positive case"__, such that the right cells in the confusion matrix are used to calculate the TPR and the TNR.
+
+__ROC and AUC__
+
+Unless your dataset is perfect for the question being asked, there is often a balance between how well we can do in terms of sensitivity vs specificity. That is, most of the times doing a bit better at predicting __yes__ means doing slightly worst at predicting __no__ (and vice-versa). Ideally, we are looking for a model that allows to maximize both the sensitivity and specificity. How good the current model is at doing this can be presented with a ROC curve, and summarized from the AUC under that curve.
+
+__Note__: ROC curves are used when the variable of interest is binary, since it can only compare the TPR and TNR of a response variable (that is, a two-way comparison).
+
+```{r echo=TRUE, include=TRUE}
+
+##we give the original nativeSpeaker values, and the votes of the trees
+##for each data entry to the function "roc" which calculates the curve
+##note here that we give the rf$votes[,2], which, if you look at the variable
+##rf$votes is the column for "yes", and as such, the ROC curve below
+##is assuming that a "positive" outcome equates to a data entry "yes"
+rfroc<- roc(data_noage$nativeSpeaker,rf$votes[,2])
+plot(rfroc)
+
+auc(rfroc)
+
+```
+
+The ideal ROC curve is one as close as possible to the top-left corner, implying that both sensitivity and specificity can be close to 1 at the same time (note the x-axis is in reverse order). The AUC in this case is high, which summarizes how well the random forest does in general.
+
+#### Predicting on new data
+
+Once we run a random forest on a dataset and it learns from it (i.e. it is trained), the forest can be used to predict on new datasets - as long as the new dataset has the same variables as the ones used for training.
+
+In the code below we have a look at prediction for __nativeSpeaker__ for a series of new individuals for which we actually do not know whether they are or not native speakers.
+
+We will create a pretend set of individuals by hand, giving them random test A and B scores. In this case we have no idea what the random forest will predict, because we don't really know the exact rules that make the predictions when we trained the forest - this is one of the problems of random forests, in which we know the forest has learned the rules the best it can, but extracting them is difficult because the rules are an ensemble of all 500 trees! 
+
+```{r echo=TRUE, include=TRUE}
+
+newindividuals<- data.frame(testA=c(10,20,30),testB=c(90,10,70))
+prediction <- predict(rf,newindividuals)
+newindividuals$prediction<- prediction
+newindividuals
+
+```
+
+In a normal situation (as just above), if we would get a new dataset of individuals for which we would want to make predictions without knowing the answer (__nativeSpeaker__), we would have to make sure that the new individuals would have been "tested" under the same conditions as the individuals of the original dataset from which the forest learned. 
+
+In the example below, we have a new dataset of individuals from which we actually know if they are native speakers, and we will pretend we do not know, predict if they are, and see how well the forest did.
+
+```{r echo=TRUE, include=TRUE}
+
+newindividuals<- data.frame(knownNativeSpear=c("yes", "no", "no", "yes", "no", "no", "no", "no", "yes", "yes"),
+                            testA=c(25, 26, 30, 28, 30, 30, 32, 24, 26, 29),
+                            testB=c(36, 33, 47, 44, 55, 42, 49, 25, 32, 55))
+data_ignoreNativeSpeaker<- newindividuals %>% select(testA, testB)
+
+prediction <- predict(rf,data_ignoreNativeSpeaker)
+data_ignoreNativeSpeaker$prediction<- prediction
+data_ignoreNativeSpeaker$original<- newindividuals$knownNativeSpear
+data_ignoreNativeSpeaker
+
+```
+
+The results you get here will vary by run, because of the stochastic nature of the random forest! How many did it get wrong and right?
+
